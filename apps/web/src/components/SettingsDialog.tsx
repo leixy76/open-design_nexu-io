@@ -30,6 +30,7 @@ import { LOCALE_LABEL, LOCALES, useI18n } from '../i18n';
 import type { Locale } from '../i18n';
 import type { Dict } from '../i18n/types';
 import { AgentIcon } from './AgentIcon';
+import { AgentDiagnosticRow } from './AgentDiagnosticRow';
 import { AmrLoginPill } from './AmrLoginPill';
 import {
   fetchVelaLoginStatus,
@@ -95,6 +96,7 @@ import {
   fetchConnectors,
   fetchDesignTemplates,
   fetchLatestGithubReleaseInfo,
+  openExternalUrl,
 } from '../providers/registry';
 import { IMAGE_MODELS, MEDIA_PROVIDERS } from '../media/models';
 import { XaiOAuthControl } from './XaiOAuthControl';
@@ -1330,6 +1332,21 @@ export function SettingsDialog({
     } finally {
       setAgentRescanRunning(false);
     }
+  };
+  const openAgentFixUrl = (url: string | undefined) => {
+    const href = sanitizeHttpsUrl(url);
+    if (!href) return;
+    markAgentInstallIntent();
+    void openExternalUrl(href);
+  };
+  const diagnosticHandlersForAgent = (agent: AgentInfo) => {
+    const docsUrl = sanitizeHttpsUrl(agent.docsUrl);
+    const installUrl = sanitizeHttpsUrl(agent.installUrl);
+    return {
+      onRescan: () => void handleRefreshAgents(),
+      ...(docsUrl ? { onOpenDocs: () => openAgentFixUrl(docsUrl) } : {}),
+      ...(installUrl ? { onOpenInstall: () => openAgentFixUrl(installUrl) } : {}),
+    };
   };
   useEffect(() => {
     const handleReturnToSettings = () => {
@@ -3203,6 +3220,7 @@ export function SettingsDialog({
                           const isAmrAgent = a.id === 'amr';
                           const description = AGENT_SHORT_DESCRIPTIONS[a.id];
                           const agentName = displayAgentName(a);
+                          const diagnosticHandlers = diagnosticHandlersForAgent(a);
                           const modelSummary = agentModelSummary(a);
                           const amrBenefits = [
                             t('settings.amrBenefitOfficial'),
@@ -3413,6 +3431,13 @@ export function SettingsDialog({
                                   </button>
                                 ) : null}
                               </div>
+                              {(a.diagnostics ?? []).map((diagnostic, i) => (
+                                <AgentDiagnosticRow
+                                  key={`${diagnostic.reason}-${i}`}
+                                  diagnostic={diagnostic}
+                                  handlers={diagnosticHandlers}
+                                />
+                              ))}
                               {active ? renderAgentModelConfig(a) : null}
                             </div>
                           );
@@ -3532,6 +3557,7 @@ export function SettingsDialog({
                           const hasLinks = Boolean(installUrl || docsUrl);
                           const description = AGENT_SHORT_DESCRIPTIONS[a.id];
                           const agentName = displayAgentName(a);
+                          const diagnosticHandlers = diagnosticHandlersForAgent(a);
                           const cardLabel = `${agentName} · ${t('common.notInstalled')}`;
                           return (
                             <div
@@ -3540,41 +3566,60 @@ export function SettingsDialog({
                               role="group"
                               aria-label={cardLabel}
                             >
-                              <AgentIcon id={a.id} size={40} />
-                              <div className="agent-card-body">
-                                <div className="agent-card-name">{agentName}</div>
-                                {description ? (
-                                  <div className="agent-card-description">
-                                    {description}
+                              <div className="agent-card-unavailable-row">
+                                <AgentIcon id={a.id} size={30} />
+                                <div className="agent-card-body">
+                                  <div className="agent-card-name">
+                                    {agentName}
+                                  </div>
+                                  {description ? (
+                                    <div className="agent-card-description">
+                                      {description}
+                                    </div>
+                                  ) : null}
+                                </div>
+                                {hasLinks ? (
+                                  <div className="agent-card-actions agent-card-actions--inline">
+                                    {docsUrl ? (
+                                      <a
+                                        href={docsUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="agent-card-link agent-card-link--muted agent-card-link--icon"
+                                        onClick={markAgentInstallIntent}
+                                        title={t('settings.agentInstall.docs')}
+                                        aria-label={t('settings.agentInstall.docs')}
+                                      >
+                                        <Icon name="file" size={15} />
+                                      </a>
+                                    ) : null}
+                                    {installUrl ? (
+                                      <a
+                                        href={installUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="agent-card-link agent-card-link--ghost"
+                                        onClick={markAgentInstallIntent}
+                                      >
+                                        {t('settings.agentInstall.install')}
+                                      </a>
+                                    ) : null}
                                   </div>
                                 ) : null}
                               </div>
-                              {hasLinks ? (
-                                <div className="agent-card-actions agent-card-actions--inline">
-                                  {docsUrl ? (
-                                    <a
-                                      href={docsUrl}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="agent-card-link agent-card-link--muted"
-                                      onClick={markAgentInstallIntent}
-                                    >
-                                      {t('settings.agentInstall.docs')}
-                                    </a>
-                                  ) : null}
-                                  {installUrl ? (
-                                    <a
-                                      href={installUrl}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="agent-card-link agent-card-link--ghost"
-                                      onClick={markAgentInstallIntent}
-                                    >
-                                      {t('settings.agentInstall.install')}
-                                    </a>
-                                  ) : null}
-                                </div>
-                              ) : null}
+                              {/* Why is it unavailable? not-on-path vs a broken
+                                  shim vs a bad *_BIN override each get a
+                                  distinct, actionable line. It spans the full
+                                  card width on its own row below the
+                                  logo/name/links so it never crowds the inline
+                                  Docs/Install actions. */}
+                              {(a.diagnostics ?? []).map((diagnostic, i) => (
+                                <AgentDiagnosticRow
+                                  key={`${diagnostic.reason}-${i}`}
+                                  diagnostic={diagnostic}
+                                  handlers={diagnosticHandlers}
+                                />
+                              ))}
                             </div>
                           );
                         })}
